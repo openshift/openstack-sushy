@@ -1,4 +1,4 @@
-FROM ubi9 AS builder
+FROM registry.ci.openshift.org/ocp/builder:golang-1.19 AS builder
 
 WORKDIR /go/src/github.com/openshift/openstack-sushy
 

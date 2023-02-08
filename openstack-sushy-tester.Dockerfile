@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-base-openshift-4.13
+FROM ubi9
 
 RUN dnf upgrade -y \
  && dnf install -y python3-devel python3-pip \

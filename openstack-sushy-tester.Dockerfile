@@ -1,4 +1,4 @@
-FROM ubi8
+FROM ubi9
 
 RUN dnf upgrade -y \
  && dnf install -y python3-devel python3-pip \

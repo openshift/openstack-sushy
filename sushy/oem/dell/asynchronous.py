@@ -43,7 +43,7 @@ def http_call(conn, method, *args, **kwargs):
               '%d', method, args or '', kwargs, response.status_code)
 
     location = None
-    while response.status_code == 202:
+    while response.status_code in (202, 404):
         location = response.headers.get('Location', location)
         if not location:
             raise sushy.exceptions.ExtensionError(

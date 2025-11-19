@@ -129,18 +129,6 @@ class SystemTestCase(base.TestCase):
                        'ComputerSystem.Reset'}},
             attributes.get('_actions'))
 
-    def test__parse_attributes_missing_actions(self):
-        self.sys_inst.json.pop('Actions')
-        self.assertRaisesRegex(
-            exceptions.MissingAttributeError, 'attribute Actions',
-            self.sys_inst._parse_attributes, self.json_doc)
-
-    def test__parse_attributes_missing_boot(self):
-        self.sys_inst.json.pop('Boot')
-        self.assertRaisesRegex(
-            exceptions.MissingAttributeError, 'attribute Boot',
-            self.sys_inst._parse_attributes, self.json_doc)
-
     def test__parse_attributes_missing_reset_target(self):
         self.sys_inst.json['Actions']['#ComputerSystem.Reset'].pop(
             'target')

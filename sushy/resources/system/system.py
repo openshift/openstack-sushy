@@ -194,7 +194,7 @@ class System(base.ResourceBase):
     bios_version = base.Field('BiosVersion')
     """The system BIOS version"""
 
-    boot = BootField('Boot', required=True)
+    boot = BootField('Boot')
     """A dictionary containing the current boot device, frequency and mode"""
 
     description = base.Field('Description')
@@ -254,7 +254,7 @@ class System(base.ResourceBase):
     """
     _supermicro_models_cd_vmedia = frozenset(['ars-111gl-nhr'])
 
-    _actions = ActionsField('Actions', required=True)
+    _actions = ActionsField('Actions')
 
     boot_progress = BootProgressField('BootProgress')
     """The last updated boot progress indicator"""
@@ -278,8 +278,10 @@ class System(base.ResourceBase):
             root=root)
 
     def _get_reset_action_element(self):
-        reset_action = self._actions.reset
-        # TODO(dtantsur): make this check also declarative?
+        reset_action = None
+        if self._actions:
+            reset_action = self._actions.reset
+            # TODO(dtantsur): make this check also declarative?
         if not reset_action:
             raise exceptions.MissingActionError(action='#ComputerSystem.Reset',
                                                 resource=self._path)
@@ -324,7 +326,7 @@ class System(base.ResourceBase):
 
         :returns: A set with the allowed values.
         """
-        if not self.boot.allowed_values:
+        if not self.boot or not self.boot.allowed_values:
             LOG.warning('Could not figure out the allowed values for '
                         'configuring the boot source for System %s',
                         self.identity)
@@ -392,6 +394,7 @@ class System(base.ResourceBase):
                     and self.model.lower() not in
                     self._supermicro_models_cd_vmedia
                     and target == sys_cons.BootSource.CD
+                    and self.boot
                     and sys_cons.BootSource.USB_CD.value
                     in self.boot.allowed_values):
                 LOG.debug('Boot from vMedia was requested on a SuperMicro'

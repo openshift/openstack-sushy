@@ -1,0 +1,8 @@
+---
+fixes:
+  - |
+    Fixes sushy library compatibility for Nvidia HGX systems where the
+    Boot subfield and actions list may be missing from the ComputerSystem
+    resource. These fields, per current DMTF schema do not appear to be
+    required. More information can be found in
+    `bug 2131954 <https://bugs.launchpad.net/sushy/+bug/2131942>`_.

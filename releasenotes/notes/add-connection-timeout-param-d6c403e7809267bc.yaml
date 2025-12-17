@@ -1,0 +1,21 @@
+---
+features:
+  - |
+    Adds two new timeout parameters to the ``Sushy`` class constructor to
+    allow faster failure when a BMC is unreachable:
+
+    * ``read_timeout``: HTTP read timeout in seconds. This is the maximum
+      time to wait for a response from the BMC after the connection is
+      established. Defaults to 60 seconds (unchanged from previous behavior).
+
+    * ``connect_timeout``: TCP connection timeout in seconds. This is the
+      maximum time to wait for the initial TCP connection to the BMC to be
+      established. When specified, sushy uses separate connect and read
+      timeouts, allowing faster failure when a BMC is unreachable while
+      still allowing longer read timeouts for slow BMCs. If not specified,
+      ``read_timeout`` is used for both.
+
+    This change is fully backwards compatible. Setting ``connect_timeout``
+    to a lower value (e.g., 10 seconds) significantly reduces the time
+    spent waiting when a BMC is unreachable, which previously could take
+    up to 60 seconds per connection attempt.

@@ -159,7 +159,9 @@ class Sushy(base.ResourceBase):
                  auth=None, connector=None,
                  public_connector=None,
                  language='en', server_side_retries=10,
-                 server_side_retries_delay=3):
+                 server_side_retries_delay=3,
+                 read_timeout=60,
+                 connect_timeout=None):
         """A class representing a RootService
 
         :param base_url: The base URL to the Redfish controller. It
@@ -186,6 +188,14 @@ class Sushy(base.ResourceBase):
             case of server side errors. Defaults to 10.
         :param server_side_retries_delay: Time in seconds between retries of
             GET requests in case of server side errors. Defaults to 3.
+        :param read_timeout: HTTP read timeout in seconds. This is the maximum
+            time to wait for a response from the BMC after the connection is
+            established. Defaults to 60.
+        :param connect_timeout: TCP connection timeout in seconds. This is
+            the maximum time to wait for the initial TCP connection to the
+            BMC to be established. If not specified, read_timeout is used for
+            both connect and read timeouts. Setting this to a lower value
+            (e.g., 10) allows faster failure when a BMC is unreachable.
         """
         self._root_prefix = root_prefix
         if (auth is not None and (password is not None
@@ -202,7 +212,9 @@ class Sushy(base.ResourceBase):
             connector or sushy_connector.Connector(
                 base_url, verify=verify,
                 server_side_retries=server_side_retries,
-                server_side_retries_delay=server_side_retries_delay),
+                server_side_retries_delay=server_side_retries_delay,
+                default_request_timeout=read_timeout,
+                connect_timeout=connect_timeout),
             path=self._root_prefix)
         self._public_connector = public_connector or requests
         self._language = language

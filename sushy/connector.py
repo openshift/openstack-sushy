@@ -45,7 +45,8 @@ class Connector:
             self, url, username=None, password=None, verify=True,
             response_callback=None, server_side_retries=0,
             server_side_retries_delay=0,
-            default_request_timeout=60):
+            default_request_timeout=60,
+            connect_timeout=None):
         self._url = url
         self._verify = verify
         self._session = requests.Session()
@@ -54,6 +55,10 @@ class Connector:
         self._server_side_retries = server_side_retries
         self._server_side_retries_delay = server_side_retries_delay
         self._default_request_timeout = default_request_timeout
+        # If connect_timeout is specified, use a tuple (connect, read) for
+        # requests timeout. This allows faster failure when a BMC is
+        # unreachable while still allowing longer read timeouts for slow BMCs.
+        self._connect_timeout = connect_timeout
 
         # NOTE(TheJulia): In order to help prevent recursive post operations
         # by allowing us to understand that we should stop authentication.
@@ -140,6 +145,10 @@ class Connector:
             server_side_retries_left = self._server_side_retries
 
         timeout = timeout or self._default_request_timeout
+        # If connect_timeout is configured, use a tuple (connect, read) for
+        # the requests timeout to allow faster failure on unreachable BMCs.
+        if self._connect_timeout is not None:
+            timeout = (self._connect_timeout, timeout)
 
         url = path if urlparse.urlparse(path).netloc else urlparse.urljoin(
             self._url, path)
@@ -324,7 +333,13 @@ class Connector:
                 raise exceptions.ConnectionError(url=url, error=m)
 
             mon = TaskMonitor.from_response(self, response, path)
-            mon.wait(timeout)
+            # TaskMonitor.wait() expects a single number, not a tuple.
+            # If timeout is a tuple (connect, read), use the read timeout.
+            if isinstance(timeout, tuple):
+                wait_timeout = timeout[1]
+            else:
+                wait_timeout = timeout
+            mon.wait(wait_timeout)
             response = mon.response
             exceptions.raise_for_response(method, url, response)
 

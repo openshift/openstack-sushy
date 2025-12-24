@@ -1,0 +1,361 @@
+# Generate Sushy Resource from Redfish Schema
+
+This command generates or updates Sushy Python resource files based on a DMTF Redfish JSON schema.
+
+## Usage
+
+Provide one of the following as input:
+1. **URL**: `https://redfish.dmtf.org/schemas/v1/Storage.v1_15_0.json`
+2. **Local file path**: `/path/to/Storage.v1_15_0.json`
+3. **Pasted JSON schema content**
+
+Then specify what to generate:
+- `constants` - Generate enum constants only
+- `resource` - Generate resource class only
+- `tests` - Generate test file and JSON sample only
+- `all` - Generate everything (default)
+
+## Process
+
+### Step 1: Parse the Schema
+
+1. Fetch/read the schema JSON
+2. Extract the resource name from `@odata.type` or filename (e.g., `Storage.v1_15_0` → `Storage`)
+3. Identify the schema version
+4. Find the main definition (usually under `definitions/<ResourceName>`)
+
+### Step 2: Analyze Schema Structure
+
+Identify these elements from the schema:
+
+| Schema Element | Location | Example |
+|----------------|----------|---------|
+| Properties | `definitions/<Name>/properties` | `Id`, `Name`, `Status` |
+| Enumerations | `definitions/<EnumName>/enum` | `RAIDType`, `MediaType` |
+| Nested Objects | `$ref` to other definitions | `Status`, `Links` |
+| Actions | `definitions/<Name>/properties/Actions` | `#Storage.SetEncryptionKey` |
+| Collections | `definitions/<Name>Collection` | `StorageCollection` |
+
+### Step 3: Determine Target Files
+
+Based on the resource category, determine file locations:
+
+```
+sushy/resources/<category>/
+├── __init__.py
+├── constants.py      # Enums
+└── <resource>.py     # Resource class
+
+sushy/tests/unit/
+├── json_samples/<resource>.json
+└── resources/<category>/test_<resource>.py
+```
+
+**Category mapping** (check existing structure):
+- ComputerSystem → `system/`
+- Manager → `manager/`
+- Chassis → `chassis/`
+- Storage → `system/storage/` (under system)
+- Drive → `system/storage/`
+- Volume → `system/storage/`
+- Processor → `system/`
+- EthernetInterface → `system/`
+- Fabric → `fabric/`
+- Certificate → `certificateservice/`
+- Task → `taskservice/`
+- Update → `updateservice/`
+- Event → `eventservice/`
+
+### Step 4: Generate Constants File
+
+For each enum in the schema:
+
+```python
+# Reference: CLAUDE.md "Constants/Enums Pattern"
+
+import enum
+
+class <EnumName>(enum.Enum):
+    """<Description from schema>"""
+
+    <UPPER_SNAKE_CASE> = '<OriginalValue>'
+    """<enumDescription if available>"""
+
+# Backward compatibility (if updating existing enum)
+<ENUM_NAME>_<VALUE> = <EnumName>.<VALUE>
+```
+
+**Naming rules:**
+- Enum class: Keep CamelCase from schema
+- Enum values: Convert CamelCase to UPPER_SNAKE_CASE
+  - `GracefulShutdown` → `GRACEFUL_SHUTDOWN`
+  - `NVMe` → `NV_ME` or keep as `NVME` (check existing patterns)
+  - Numbers stay: `TPM2_0` stays `TPM2_0`
+
+### Step 5: Generate Resource Class
+
+```python
+# Reference: CLAUDE.md "Simple Resource Example"
+
+# Copyright <YEAR> Red Hat, Inc.
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); ...
+
+# This is referred from Redfish standard schema.
+# <schema_url>
+
+from sushy.resources import base
+from sushy.resources import common
+from sushy.resources import constants as res_cons
+from sushy.resources.<category> import constants as <cat>_cons
+from sushy import utils
+
+
+class <ResourceName>(base.ResourceBase):
+    """A class representing a <ResourceName> Redfish resource."""
+
+    identity = base.Field('Id', required=True)
+    """The resource identity"""
+
+    name = base.Field('Name')
+    """The resource name"""
+
+    description = base.Field('Description')
+    """The resource description"""
+
+    # ... additional fields from schema properties ...
+
+    def __init__(self, connector, path, redfish_version=None,
+                 registries=None, root=None):
+        """A class representing a <ResourceName>
+
+        :param connector: A Connector instance
+        :param path: The canonical path to the resource
+        :param redfish_version: The version of Redfish
+        :param registries: Dict of registries for message parsing
+        :param root: Sushy root object
+        """
+        super().__init__(connector, path, redfish_version=redfish_version,
+                         registries=registries, root=root)
+```
+
+**Field mapping rules:**
+
+| Schema Type | Sushy Field |
+|-------------|-------------|
+| `"type": "string"` | `base.Field('Name')` |
+| `"type": "integer"` | `base.Field('Name', adapter=int)` |
+| `"type": "number"` | `base.Field('Name', adapter=float)` |
+| `"type": "boolean"` | `base.Field('Name')` |
+| `"type": "string", "format": "date-time"` | `base.Field('Name', adapter=parser.parse)` |
+| `"$ref": "#/definitions/<Enum>"` with enum | `base.MappedField('Name', cons.EnumClass)` |
+| `"$ref": "#/definitions/<Object>"` | Custom `CompositeField` subclass |
+| `"type": "array", "items": {"$ref": ...}` | Custom `ListField` subclass |
+| `"type": "array", "items": {"type": "string"}` | `base.Field('Name', adapter=list)` |
+| Property with `@Redfish.AllowableValues` | Include `allowed_values` field |
+
+### Step 6: Generate Composite Fields
+
+For nested objects:
+
+```python
+class <NestedName>Field(base.CompositeField):
+    """<Description>"""
+
+    property_one = base.Field('PropertyOne')
+    """<Property description>"""
+
+    property_two = base.MappedField('PropertyTwo', cons.SomeEnum)
+    """<Property description>"""
+```
+
+### Step 7: Generate Actions
+
+For resources with Actions:
+
+```python
+class ActionsField(base.CompositeField):
+    some_action = common.ActionField('#<Resource>.<ActionName>')
+
+
+# In the resource class:
+_actions = ActionsField('Actions')
+
+def do_action(self, param):
+    """Perform the action.
+
+    :param param: Parameter description
+    :raises: InvalidParameterValueError if param is invalid
+    """
+    target_uri = self._actions.some_action.target_uri
+    self._conn.post(target_uri, data={'Param': param})
+```
+
+### Step 8: Generate Collection Class
+
+If this is a collection resource:
+
+```python
+class <ResourceName>Collection(base.ResourceCollectionBase):
+
+    @property
+    def _resource_type(self):
+        return <ResourceName>
+
+    def __init__(self, connector, path, redfish_version=None,
+                 registries=None, root=None):
+        """A class representing a <ResourceName>Collection
+
+        :param connector: A Connector instance
+        :param path: The canonical path to the collection
+        :param redfish_version: The version of Redfish
+        :param registries: Dict of registries for message parsing
+        :param root: Sushy root object
+        """
+        super().__init__(connector, path, redfish_version=redfish_version,
+                         registries=registries, root=root)
+```
+
+### Step 9: Generate Sub-resource Properties
+
+For `@odata.id` references to other resources:
+
+```python
+@property
+@utils.cache_it
+def <sub_resource_name>(self):
+    """Property to reference <SubResource> instance.
+
+    It is set once when first queried. On refresh,
+    this property is marked as stale.
+    """
+    return <sub_resource_module>.<SubResourceClass>(
+        self._conn,
+        utils.get_sub_resource_path_by(self, '<JsonPropertyName>'),
+        redfish_version=self.redfish_version,
+        registries=self.registries,
+        root=self.root)
+```
+
+### Step 10: Generate Test File
+
+```python
+# Copyright <YEAR> Red Hat, Inc.
+# All Rights Reserved.
+#
+#    Licensed under the Apache License, Version 2.0 (the "License"); ...
+
+import json
+from unittest import mock
+
+from sushy.resources.<category> import <resource>
+from sushy.resources.<category> import constants as <cat>_cons
+from sushy.tests.unit import base
+
+
+class <ResourceName>TestCase(base.TestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.conn = mock.Mock()
+        with open('sushy/tests/unit/json_samples/<resource>.json') as f:
+            self.json_doc = json.load(f)
+
+        self.conn.get.return_value.json.return_value = self.json_doc
+
+        self.resource = <resource>.<ResourceName>(
+            self.conn, '/redfish/v1/<Path>/<Id>',
+            redfish_version='1.0.2')
+
+    def test__parse_attributes(self):
+        self.resource._parse_attributes(self.json_doc)
+        self.assertEqual('<expected_id>', self.resource.identity)
+        self.assertEqual('<expected_name>', self.resource.name)
+        # ... assertions for each field ...
+```
+
+### Step 11: Generate JSON Sample
+
+Create a realistic JSON sample based on schema:
+
+```json
+{
+    "@odata.type": "#<Resource>.v<Version>.<Resource>",
+    "@odata.id": "/redfish/v1/<Path>/<Id>",
+    "Id": "<Id>",
+    "Name": "<Name>",
+    "Description": "<Description>",
+    "Status": {
+        "State": "Enabled",
+        "Health": "OK"
+    }
+    // ... other properties with realistic values ...
+}
+```
+
+### Step 12: Update Exports
+
+1. Update `sushy/resources/<category>/__init__.py`
+2. If new constants, update `sushy/__init__.py` to import them
+
+## Checklist
+
+Before generating, verify:
+- [ ] Check if resource already exists (update vs create)
+- [ ] Check existing constants file for enum conflicts
+- [ ] Verify category/directory structure
+- [ ] Check for OEM extensions in schema
+
+After generating:
+- [ ] Run `tox -e pep8` to check linting
+- [ ] Run `tox -e py3` to run tests
+- [ ] Review generated code for accuracy
+- [ ] Add any custom methods needed
+
+## Examples
+
+### Example 1: Simple Resource
+
+**Input**: `https://redfish.dmtf.org/schemas/v1/Certificate.v1_6_0.json`
+
+**Output files**:
+- `sushy/resources/certificateservice/constants.py` (if new enums)
+- `sushy/resources/certificateservice/certificate.py`
+- `sushy/tests/unit/json_samples/certificate.json`
+- `sushy/tests/unit/resources/certificateservice/test_certificate.py`
+
+### Example 2: Resource with Actions
+
+**Input**: Schema with `Actions` property containing `#Resource.DoSomething`
+
+**Output includes**:
+```python
+class DoSomethingActionField(common.ActionField):
+    allowed_values = base.Field(
+        'SomeParam@Redfish.AllowableValues', adapter=list)
+
+class ActionsField(base.CompositeField):
+    do_something = DoSomethingActionField('#Resource.DoSomething')
+
+# In resource class:
+_actions = ActionsField('Actions')
+
+def do_something(self, some_param):
+    """Do something action.
+
+    :param some_param: The parameter value
+    """
+    action = self._actions.do_something
+    self._conn.post(action.target_uri, data={'SomeParam': some_param})
+```
+
+## Common Patterns Reference
+
+See `CLAUDE.md` for complete patterns documentation.
+
+## Schema Locations
+
+- **DMTF Schemas**: https://redfish.dmtf.org/schemas/v1/
+- **Schema index**: https://redfish.dmtf.org/schemas/
+- **Bundled registries**: `sushy/standard_registries/`

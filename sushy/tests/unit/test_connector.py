@@ -195,6 +195,14 @@ class ConnectorOpTestCase(base.TestCase):
             'GET', 'http://foo.bar:1234/fake/path',
             headers=self.headers, json=None, verify=True, timeout=42)
 
+    def test_ok_get_connect_timeout_tuple(self):
+        self.conn._default_request_timeout = 60
+        self.conn._connect_timeout = 10
+        self.conn._op('GET', path='fake/path')
+        self.request.assert_called_once_with(
+            'GET', 'http://foo.bar:1234/fake/path',
+            headers=self.headers, json=None, verify=True, timeout=(10, 60))
+
     def test_response_callback(self):
         mock_response_callback = mock.MagicMock()
         self.conn._response_callback = mock_response_callback
@@ -700,6 +708,32 @@ class ConnectorOpTestCase(base.TestCase):
         self.request.side_effect = [response1, response1, response2]
         with self.assertRaisesRegex(exceptions.BadRequestError, message):
             self.conn._op('POST', 'http://foo.bar', blocking=True)
+
+    @mock.patch('sushy.connector.time.sleep', autospec=True)
+    def test_blocking_with_connect_timeout_tuple(self, mock_sleep):
+        # Test that TaskMonitor.wait() receives the read timeout (second value)
+        # when timeout is a tuple (connect, read). This verifies that the
+        # tuple doesn't cause a TypeError in TaskMonitor.wait().
+        self.conn._connect_timeout = 10
+        self.conn._default_request_timeout = 60
+        response1 = mock.MagicMock(spec=requests.Response)
+        response1.status_code = http_client.ACCEPTED
+        response1.headers = {
+            'Retry-After': 5,
+            'Location': '/redfish/v1/taskmon/1',
+            'Content-Length': 10
+        }
+        response1.json.return_value = {'Id': 3, 'Name': 'Test'}
+        response2 = mock.MagicMock(spec=requests.Response)
+        response2.status_code = http_client.OK
+        response2.json.return_value = {}
+        self.request.side_effect = [response1, response2]
+        # This should not raise - the tuple timeout should be handled correctly
+        # by extracting the read timeout for TaskMonitor.wait()
+        self.conn._op('POST', 'http://foo.bar', blocking=True)
+        # Verify the first request was called with the tuple timeout
+        first_call = self.request.call_args_list[0]
+        self.assertEqual(first_call[1]['timeout'], (10, 60))
 
     @mock.patch.object(connector.LOG, 'warning', autospec=True)
     def test_access_error_basic_auth(self, mock_log):

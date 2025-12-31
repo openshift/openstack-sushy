@@ -54,7 +54,8 @@ class MainTestCase(base.TestCase):
                                verify=True, auth=mock_auth)
         mock_connector.assert_called_once_with(
             'http://foo.bar:1234', verify=True, server_side_retries=10,
-            server_side_retries_delay=3)
+            server_side_retries_delay=3, default_request_timeout=60,
+            connect_timeout=None)
 
     def test__parse_attributes(self):
         self.root._parse_attributes(self.json_doc)
@@ -86,6 +87,32 @@ class MainTestCase(base.TestCase):
         self.assertRaises(
             ValueError, main.Sushy, 'http://foo.bar:1234',
             'foo', 'bar', auth=mock.MagicMock())
+
+    @mock.patch.object(auth, 'SessionOrBasicAuth', autospec=True)
+    @mock.patch.object(connector, 'Connector', autospec=True)
+    def test_custom_read_timeout(self, mock_connector, mock_auth):
+        mock_connector.return_value = self.conn
+        with open('sushy/tests/unit/json_samples/root.json') as f:
+            self.conn.get.return_value.json.return_value = json.load(f)
+        main.Sushy('http://foo.bar:1234', verify=True, auth=mock_auth,
+                   read_timeout=30)
+        mock_connector.assert_called_once_with(
+            'http://foo.bar:1234', verify=True, server_side_retries=10,
+            server_side_retries_delay=3, default_request_timeout=30,
+            connect_timeout=None)
+
+    @mock.patch.object(auth, 'SessionOrBasicAuth', autospec=True)
+    @mock.patch.object(connector, 'Connector', autospec=True)
+    def test_custom_connect_timeout(self, mock_connector, mock_auth):
+        mock_connector.return_value = self.conn
+        with open('sushy/tests/unit/json_samples/root.json') as f:
+            self.conn.get.return_value.json.return_value = json.load(f)
+        main.Sushy('http://foo.bar:1234', verify=True, auth=mock_auth,
+                   read_timeout=60, connect_timeout=10)
+        mock_connector.assert_called_once_with(
+            'http://foo.bar:1234', verify=True, server_side_retries=10,
+            server_side_retries_delay=3, default_request_timeout=60,
+            connect_timeout=10)
 
     @mock.patch.object(connector, 'Connector', autospec=True)
     def test_custom_connector(self, mock_Sushy_Connector):

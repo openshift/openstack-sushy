@@ -1,0 +1,9 @@
+---
+fixes:
+  - |
+    Some Redfish implementations advertise collection members in their JSON
+    responses that don't actually exist. For example, the HGX board lists
+    LogServices/FDR as a member, but returns 404 when sushy tries to fetch it.
+    This causes sushy to fail during System initialization. We now handle
+    those gracefully by allowing get_members() to catch ResourceNotFoundError
+    for individual members.

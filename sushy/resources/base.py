@@ -847,7 +847,13 @@ class ResourceLinksBase(ResourceBase, metaclass=abc.ABCMeta):
 
         :returns: A list of ``_resource_type`` objects
         """
-        return [self.get_member(id_) for id_ in self.members_identities]
+        members = []
+        for id_ in self.members_identities:
+            try:
+                members.append(self.get_member(id_))
+            except exceptions.ResourceNotFoundError:
+                LOG.warning('Skipping missing collection member %s', id_)
+        return members
 
 
 class ResourceCollectionBase(ResourceLinksBase):

@@ -118,12 +118,26 @@ class VirtualMedia(base.ResourceBase):
            and 'TransferProtocolType' in error.detail):
             return True
 
-        return (
-            (error.code.endswith(".ActionParameterMissing")
-             or error.code.endswith(".PropertyMissing"))
-            and (("#/TransferProtocolType" in error.related_properties)
-                 or ("/TransferProtocolType" in error.related_properties))
-        )
+        if not (error.code.endswith(".ActionParameterMissing")
+                or error.code.endswith(".PropertyMissing")):
+            return False
+
+        if (("#/TransferProtocolType" in error.related_properties)
+                or ("/TransferProtocolType" in error.related_properties)):
+            return True
+
+        # NOTE(janders) Some BMCs (e.g. Cisco C845A M8 with Redfish
+        # Base.1.18.1) do not include RelatedProperties in the error
+        # response, but do include the missing parameter name in
+        # MessageArgs. Check for that as a fallback.
+        try:
+            args = error.extended_info[0].get('MessageArgs', [])
+            if 'TransferProtocolType' in args:
+                return True
+        except (IndexError, KeyError, TypeError):
+            pass
+
+        return False
 
     def is_transfer_method_required(self, error=None):
         """Check the response code and body and in case of failure

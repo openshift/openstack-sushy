@@ -1,0 +1,19 @@
+{
+  "error": {
+    "@Message.ExtendedInfo": [
+      {
+        "@odata.type": "#Message.v1_1_1.Message",
+        "Message": "The action InsertMedia requires the parameter TransferProtocolType to be present in the request body.",
+        "MessageArgs": [
+          "InsertMedia",
+          "TransferProtocolType"
+        ],
+        "MessageId": "Base.1.18.1.ActionParameterMissing",
+        "MessageSeverity": "Critical",
+        "Resolution": "Supply the action with the required parameter in the request body when the request is resubmitted."
+      }
+    ],
+    "code": "Base.1.18.1.ActionParameterMissing",
+    "message": "The action InsertMedia requires the parameter TransferProtocolType to be present in the request body."
+  }
+}

@@ -34,8 +34,9 @@ class DellStorageControllerExtension(oem_base.OEMResourceBase):
         to RAID mode. No changes made for PERC 11 and above as they support
         only RAID mode, and BOSS controller as it does not have controller
         mode.
+
         :returns: TaskMonitor if controller mode changes applied and need to
-            reboot, otherwise None
+                  reboot, otherwise None
         """
         # Some controllers do not have controller_mode
         try:

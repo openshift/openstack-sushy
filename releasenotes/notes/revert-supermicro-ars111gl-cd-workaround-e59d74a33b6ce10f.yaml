@@ -1,0 +1,14 @@
+---
+fixes:
+  - |
+    Fixes virtual media boot failure on Supermicro ARS-111GL-NHR with newer
+    BMC firmware, where the virtual media device string has changed back to
+    'UsbCd' consistent with other Supermicro servers. The model-specific
+    exception that previously skipped the CD-to-UsbCd override for this model
+    has been reverted.
+upgrade:
+  - |
+    The CD-to-UsbCd boot source override is now applied unconditionally to all
+    Supermicro machines. Users running older ARS-111GL-NHR firmware where 'Cd'
+    was the correct virtual media device string will need to upgrade their BMC
+    firmware.

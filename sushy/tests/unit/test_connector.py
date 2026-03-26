@@ -203,6 +203,36 @@ class ConnectorOpTestCase(base.TestCase):
             'GET', 'http://foo.bar:1234/fake/path',
             headers=self.headers, json=None, verify=True, timeout=(10, 60))
 
+    def test_connect_timeout_not_double_wrapped_on_retry(self):
+        """Test that timeout tuple is not double-wrapped on recursive retry.
+
+        When connect_timeout is set, _op() wraps timeout into a
+        (connect, read) tuple. On retry _op() calls itself recursively,
+        passing the already-wrapped tuple. Without the isinstance guard
+        this results in (connect, (connect, read)) which requests rejects.
+        Regression test for https://bugs.launchpad.net/sushy/+bug/2146416
+        """
+        self.conn._connect_timeout = 10
+        self.conn._default_request_timeout = 60
+        self.request.side_effect = [
+            mock.Mock(status_code=http_client.NOT_ACCEPTABLE),
+            mock.Mock(status_code=http_client.OK),
+        ]
+        self.conn._op('GET', 'http://foo.bar')
+
+        self.assertEqual(2, self.request.call_count)
+        headers_no_accept = self.headers.copy()
+        headers_no_accept.pop('Accept-Encoding')
+        # Both the original and the retried request must use the same
+        # (connect, read) timeout tuple - never a nested tuple.
+        self.request.assert_has_calls([
+            mock.call('GET', 'http://foo.bar', headers=self.headers,
+                      json=None, verify=True, timeout=(10, 60)),
+            mock.call('GET', 'http://foo.bar',
+                      headers=headers_no_accept,
+                      json=None, verify=True, timeout=(10, 60)),
+        ])
+
     def test_response_callback(self):
         mock_response_callback = mock.MagicMock()
         self.conn._response_callback = mock_response_callback

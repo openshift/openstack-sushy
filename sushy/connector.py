@@ -147,7 +147,8 @@ class Connector:
         timeout = timeout or self._default_request_timeout
         # If connect_timeout is configured, use a tuple (connect, read) for
         # the requests timeout to allow faster failure on unreachable BMCs.
-        if self._connect_timeout is not None:
+        if (self._connect_timeout is not None
+                and not isinstance(timeout, tuple)):
             timeout = (self._connect_timeout, timeout)
 
         url = path if urlparse.urlparse(path).netloc else urlparse.urljoin(

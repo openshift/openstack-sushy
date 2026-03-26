@@ -1,0 +1,12 @@
+---
+fixes:
+  - |
+    Fixes a bug where the ``connect_timeout`` parameter caused an
+    ``Invalid timeout`` error on any HTTP retry inside ``Connector._op()``.
+    When ``connect_timeout`` is set, the timeout is wrapped into a
+    ``(connect, read)`` tuple, but on recursive retries (server-side errors,
+    re-authentication, or redirect following) the already-wrapped tuple was
+    wrapped again, producing a nested tuple like ``(30, (30, 60))`` that the
+    ``requests`` library rejects. The timeout tuple is now passed through
+    unchanged on retries.
+    See `LP#2146416 <https://bugs.launchpad.net/sushy/+bug/2146416>`_.

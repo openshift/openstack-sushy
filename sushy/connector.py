@@ -16,10 +16,12 @@
 from http import client as http_client
 import logging
 import re
+import ssl
 import time
 from urllib import parse as urlparse
 
 import requests
+from requests.adapters import HTTPAdapter
 from requests import exceptions as req_exc
 from urllib3.exceptions import InsecureRequestWarning
 
@@ -39,6 +41,53 @@ _RETRYABLE_EXCEPTIONS = (
 )
 
 
+class TLSHttpAdapter(HTTPAdapter):
+    """HTTP adapter that configures TLS settings for HTTPS connections."""
+
+    def __init__(self, tls_min_version=None, tls_ciphers=None,
+                 *args, **kwargs):
+        """Initialize the TLS adapter.
+
+        :param tls_min_version: Minimum TLS version ('1.1', '1.2', or '1.3').
+            Note: TLS 1.1 is deprecated and should only be used for
+            compatibility with legacy BMC hardware.
+        :param tls_ciphers: Colon-separated string of allowed cipher suites
+        """
+        self.tls_min_version = tls_min_version
+        self.tls_ciphers = tls_ciphers
+        super().__init__(*args, **kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        """Override to set up TLS configuration."""
+        if self.tls_min_version or self.tls_ciphers:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+            if self.tls_min_version == '1.3':
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+            elif self.tls_min_version == '1.2':
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            elif self.tls_min_version == '1.1':
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_1
+            elif self.tls_min_version is not None:
+                raise ValueError(
+                    f"tls_min_version must be '1.1', '1.2', or '1.3', "
+                    f"got: {self.tls_min_version}")
+
+            if self.tls_ciphers:
+                try:
+                    ctx.set_ciphers(self.tls_ciphers)
+                except ssl.SSLError as e:
+                    raise ValueError(
+                        f"Invalid cipher specification: {str(e)}")
+
+            ctx.check_hostname = True
+            ctx.verify_mode = ssl.CERT_REQUIRED
+
+            kwargs['ssl_context'] = ctx
+
+        return super().init_poolmanager(*args, **kwargs)
+
+
 class Connector:
 
     def __init__(
@@ -46,7 +95,9 @@ class Connector:
             response_callback=None, server_side_retries=0,
             server_side_retries_delay=0,
             default_request_timeout=60,
-            connect_timeout=None):
+            connect_timeout=None,
+            tls_min_version=None,
+            tls_ciphers=None):
         self._url = url
         self._verify = verify
         self._session = requests.Session()
@@ -59,6 +110,13 @@ class Connector:
         # requests timeout. This allows faster failure when a BMC is
         # unreachable while still allowing longer read timeouts for slow BMCs.
         self._connect_timeout = connect_timeout
+
+        # Mount TLS adapter for HTTPS connections if TLS settings are provided
+        if tls_min_version or tls_ciphers:
+            adapter = TLSHttpAdapter(
+                tls_min_version=tls_min_version,
+                tls_ciphers=tls_ciphers)
+            self._session.mount('https://', adapter)
 
         # NOTE(TheJulia): In order to help prevent recursive post operations
         # by allowing us to understand that we should stop authentication.

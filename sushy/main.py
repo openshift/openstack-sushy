@@ -161,7 +161,9 @@ class Sushy(base.ResourceBase):
                  language='en', server_side_retries=10,
                  server_side_retries_delay=3,
                  read_timeout=60,
-                 connect_timeout=None):
+                 connect_timeout=None,
+                 tls_min_version=None,
+                 tls_ciphers=None):
         """A class representing a RootService
 
         :param base_url: The base URL to the Redfish controller. It
@@ -196,6 +198,14 @@ class Sushy(base.ResourceBase):
             BMC to be established. If not specified, read_timeout is used for
             both connect and read timeouts. Setting this to a lower value
             (e.g., 10) allows faster failure when a BMC is unreachable.
+        :param tls_min_version: Minimum TLS version to use for HTTPS
+            connections. Supported values are '1.1', '1.2', and '1.3'. If not
+            specified, the default TLS version negotiation is used. Note: TLS
+            1.1 is deprecated and should only be used for compatibility with
+            legacy BMC hardware.
+        :param tls_ciphers: Colon-separated list of allowed cipher suites
+            in OpenSSL format for HTTPS connections. If not specified, the
+            default cipher suites are used.
         """
         self._root_prefix = root_prefix
         if (auth is not None and (password is not None
@@ -214,7 +224,9 @@ class Sushy(base.ResourceBase):
                 server_side_retries=server_side_retries,
                 server_side_retries_delay=server_side_retries_delay,
                 default_request_timeout=read_timeout,
-                connect_timeout=connect_timeout),
+                connect_timeout=connect_timeout,
+                tls_min_version=tls_min_version,
+                tls_ciphers=tls_ciphers),
             path=self._root_prefix)
         self._public_connector = public_connector or requests
         self._language = language

@@ -1046,3 +1046,95 @@ class ConnectorOpTestCase(base.TestCase):
                           target_uri)
         self.assertEqual(self.request.call_count,
                          self.conn._server_side_retries)
+
+
+class TLSHttpAdapterTestCase(base.TestCase):
+
+    def test_init_with_tls_settings(self):
+        adapter = connector.TLSHttpAdapter(
+            tls_min_version='1.3',
+            tls_ciphers='ECDHE-RSA-AES256-GCM-SHA384')
+        self.assertEqual(adapter.tls_min_version, '1.3')
+        self.assertEqual(adapter.tls_ciphers,
+                         'ECDHE-RSA-AES256-GCM-SHA384')
+
+    def test_init_without_tls_settings(self):
+        adapter = connector.TLSHttpAdapter()
+        self.assertIsNone(adapter.tls_min_version)
+        self.assertIsNone(adapter.tls_ciphers)
+
+
+class ConnectorTLSTestCase(base.TestCase):
+
+    @mock.patch.object(sushy_auth, 'SessionOrBasicAuth', autospec=True)
+    def test_connector_with_tls_min_version_1_3(self, mock_auth):
+        mock_auth.get_session_key.return_value = None
+        conn = connector.Connector(
+            'https://foo.bar:1234',
+            tls_min_version='1.3',
+            verify=True)
+        # Verify adapter is mounted
+        adapter = conn._session.get_adapter('https://foo.bar:1234')
+        self.assertIsInstance(adapter, connector.TLSHttpAdapter)
+        self.assertEqual(adapter.tls_min_version, '1.3')
+
+    @mock.patch.object(sushy_auth, 'SessionOrBasicAuth', autospec=True)
+    def test_connector_with_tls_min_version_1_2(self, mock_auth):
+        mock_auth.get_session_key.return_value = None
+        conn = connector.Connector(
+            'https://foo.bar:1234',
+            tls_min_version='1.2',
+            verify=True)
+        # Verify adapter is mounted
+        adapter = conn._session.get_adapter('https://foo.bar:1234')
+        self.assertIsInstance(adapter, connector.TLSHttpAdapter)
+        self.assertEqual(adapter.tls_min_version, '1.2')
+
+    @mock.patch.object(sushy_auth, 'SessionOrBasicAuth', autospec=True)
+    def test_connector_with_tls_min_version_1_1(self, mock_auth):
+        mock_auth.get_session_key.return_value = None
+        conn = connector.Connector(
+            'https://foo.bar:1234',
+            tls_min_version='1.1',
+            verify=True)
+        # Verify adapter is mounted
+        adapter = conn._session.get_adapter('https://foo.bar:1234')
+        self.assertIsInstance(adapter, connector.TLSHttpAdapter)
+        self.assertEqual(adapter.tls_min_version, '1.1')
+
+    @mock.patch.object(sushy_auth, 'SessionOrBasicAuth', autospec=True)
+    def test_connector_with_tls_ciphers(self, mock_auth):
+        mock_auth.get_session_key.return_value = None
+        conn = connector.Connector(
+            'https://foo.bar:1234',
+            tls_ciphers='ECDHE-RSA-AES256-GCM-SHA384',
+            verify=True)
+        # Verify adapter is mounted
+        adapter = conn._session.get_adapter('https://foo.bar:1234')
+        self.assertIsInstance(adapter, connector.TLSHttpAdapter)
+        self.assertEqual(adapter.tls_ciphers,
+                         'ECDHE-RSA-AES256-GCM-SHA384')
+
+    @mock.patch.object(sushy_auth, 'SessionOrBasicAuth', autospec=True)
+    def test_connector_without_tls_settings(self, mock_auth):
+        mock_auth.get_session_key.return_value = None
+        conn = connector.Connector(
+            'https://foo.bar:1234',
+            verify=True)
+        # Default adapter should not be TLSHttpAdapter
+        adapter = conn._session.get_adapter('https://foo.bar:1234')
+        self.assertNotIsInstance(adapter, connector.TLSHttpAdapter)
+
+    def test_adapter_with_invalid_tls_version(self):
+        self.assertRaisesRegex(
+            ValueError,
+            "tls_min_version must be '1.1', '1.2', or '1.3'",
+            connector.TLSHttpAdapter,
+            tls_min_version='1.0')
+
+    def test_adapter_with_invalid_ciphers(self):
+        self.assertRaisesRegex(
+            ValueError,
+            "Invalid cipher specification",
+            connector.TLSHttpAdapter,
+            tls_ciphers='INVALID_CIPHER')

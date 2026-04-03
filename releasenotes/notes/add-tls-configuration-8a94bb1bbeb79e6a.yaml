@@ -1,0 +1,22 @@
+---
+features:
+  - |
+    Adds configurable TLS settings to the ``Sushy`` class constructor to
+    allow operators to specify minimum TLS protocol versions and cipher
+    suites for HTTPS connections to Redfish BMCs.
+
+    * ``tls_min_version``: Minimum TLS version to use for HTTPS
+      connections. Supported values are '1.1', '1.2', and '1.3'. If not
+      specified, the default TLS version negotiation is used. Note that TLS
+      1.1 is deprecated and should only be used for compatibility with
+      legacy BMC hardware.
+
+    * ``tls_ciphers``: Colon-separated list of allowed cipher suites in
+      OpenSSL format for HTTPS connections. If not specified, the default
+      cipher suites are used.
+
+    This change is fully backwards compatible. When TLS settings are
+    provided, a custom HTTPAdapter is mounted that configures an
+    ssl.SSLContext with the specified settings. This allows operators to
+    enforce security policies requiring specific TLS versions or cipher
+    suites when communicating with BMCs.

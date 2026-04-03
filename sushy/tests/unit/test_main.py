@@ -55,7 +55,7 @@ class MainTestCase(base.TestCase):
         mock_connector.assert_called_once_with(
             'http://foo.bar:1234', verify=True, server_side_retries=10,
             server_side_retries_delay=3, default_request_timeout=60,
-            connect_timeout=None)
+            connect_timeout=None, tls_min_version=None, tls_ciphers=None)
 
     def test__parse_attributes(self):
         self.root._parse_attributes(self.json_doc)
@@ -99,7 +99,7 @@ class MainTestCase(base.TestCase):
         mock_connector.assert_called_once_with(
             'http://foo.bar:1234', verify=True, server_side_retries=10,
             server_side_retries_delay=3, default_request_timeout=30,
-            connect_timeout=None)
+            connect_timeout=None, tls_min_version=None, tls_ciphers=None)
 
     @mock.patch.object(auth, 'SessionOrBasicAuth', autospec=True)
     @mock.patch.object(connector, 'Connector', autospec=True)
@@ -112,7 +112,7 @@ class MainTestCase(base.TestCase):
         mock_connector.assert_called_once_with(
             'http://foo.bar:1234', verify=True, server_side_retries=10,
             server_side_retries_delay=3, default_request_timeout=60,
-            connect_timeout=10)
+            connect_timeout=10, tls_min_version=None, tls_ciphers=None)
 
     @mock.patch.object(connector, 'Connector', autospec=True)
     def test_custom_connector(self, mock_Sushy_Connector):

@@ -1138,3 +1138,17 @@ class ConnectorTLSTestCase(base.TestCase):
             "Invalid cipher specification",
             connector.TLSHttpAdapter,
             tls_ciphers='INVALID_CIPHER')
+
+    @mock.patch.object(sushy_auth, 'SessionOrBasicAuth', autospec=True)
+    def test_connector_with_tls_and_verify_false(self, mock_auth):
+        mock_auth.get_session_key.return_value = None
+        # This should not raise an error
+        conn = connector.Connector(
+            'https://foo.bar:1234',
+            tls_min_version='1.1',
+            verify=False)
+        # Verify adapter is mounted and has verify=False
+        adapter = conn._session.get_adapter('https://foo.bar:1234')
+        self.assertIsInstance(adapter, connector.TLSHttpAdapter)
+        self.assertEqual(adapter.tls_min_version, '1.1')
+        self.assertFalse(adapter.verify)

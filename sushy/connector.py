@@ -44,7 +44,7 @@ _RETRYABLE_EXCEPTIONS = (
 class TLSHttpAdapter(HTTPAdapter):
     """HTTP adapter that configures TLS settings for HTTPS connections."""
 
-    def __init__(self, tls_min_version=None, tls_ciphers=None,
+    def __init__(self, tls_min_version=None, tls_ciphers=None, verify=True,
                  *args, **kwargs):
         """Initialize the TLS adapter.
 
@@ -52,9 +52,11 @@ class TLSHttpAdapter(HTTPAdapter):
             Note: TLS 1.1 is deprecated and should only be used for
             compatibility with legacy BMC hardware.
         :param tls_ciphers: Colon-separated string of allowed cipher suites
+        :param verify: Whether to verify SSL certificates
         """
         self.tls_min_version = tls_min_version
         self.tls_ciphers = tls_ciphers
+        self.verify = verify
         super().__init__(*args, **kwargs)
 
     def init_poolmanager(self, *args, **kwargs):
@@ -80,8 +82,12 @@ class TLSHttpAdapter(HTTPAdapter):
                     raise ValueError(
                         f"Invalid cipher specification: {str(e)}")
 
-            ctx.check_hostname = True
-            ctx.verify_mode = ssl.CERT_REQUIRED
+            if self.verify:
+                ctx.check_hostname = True
+                ctx.verify_mode = ssl.CERT_REQUIRED
+            else:
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
 
             kwargs['ssl_context'] = ctx
 
@@ -115,7 +121,8 @@ class Connector:
         if tls_min_version or tls_ciphers:
             adapter = TLSHttpAdapter(
                 tls_min_version=tls_min_version,
-                tls_ciphers=tls_ciphers)
+                tls_ciphers=tls_ciphers,
+                verify=self._verify)
             self._session.mount('https://', adapter)
 
         # NOTE(TheJulia): In order to help prevent recursive post operations

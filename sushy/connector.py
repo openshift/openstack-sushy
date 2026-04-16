@@ -261,6 +261,11 @@ class Connector:
                     **extra_session_req_kwargs
                 )
                 break
+            except req_exc.SSLError as e:
+                # SSL errors (handshake failures, certificate issues) are
+                # configuration problems, not transient errors. Do not retry.
+                LOG.error("SSL/TLS error connecting to %s: %s", url, e)
+                raise exceptions.ConnectionError(url=url, error=e)
             except _RETRYABLE_EXCEPTIONS as e:
                 if attempt < retries - 1:
                     LOG.warning(

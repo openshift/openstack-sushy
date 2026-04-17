@@ -1047,6 +1047,19 @@ class ConnectorOpTestCase(base.TestCase):
         self.assertEqual(self.request.call_count,
                          self.conn._server_side_retries)
 
+    @mock.patch.object(time, 'sleep', autospec=True)
+    def test_ssl_error_not_retried(self, mock_sleep):
+        """Test that SSL errors are not retried."""
+        target_uri = '/redfish/v1/Systems/1'
+        self.request.side_effect = requests.exceptions.SSLError(
+            "SSL handshake failed")
+        self.assertRaises(exceptions.ConnectionError, self.conn.get,
+                          target_uri)
+        # SSL errors should fail immediately without retries
+        self.assertEqual(self.request.call_count, 1)
+        # Sleep should not be called since there are no retries
+        mock_sleep.assert_not_called()
+
 
 class TLSHttpAdapterTestCase(base.TestCase):
 
@@ -1138,3 +1151,17 @@ class ConnectorTLSTestCase(base.TestCase):
             "Invalid cipher specification",
             connector.TLSHttpAdapter,
             tls_ciphers='INVALID_CIPHER')
+
+    @mock.patch.object(sushy_auth, 'SessionOrBasicAuth', autospec=True)
+    def test_connector_with_tls_and_verify_false(self, mock_auth):
+        mock_auth.get_session_key.return_value = None
+        # This should not raise an error
+        conn = connector.Connector(
+            'https://foo.bar:1234',
+            tls_min_version='1.1',
+            verify=False)
+        # Verify adapter is mounted and has verify=False
+        adapter = conn._session.get_adapter('https://foo.bar:1234')
+        self.assertIsInstance(adapter, connector.TLSHttpAdapter)
+        self.assertEqual(adapter.tls_min_version, '1.1')
+        self.assertFalse(adapter.verify)

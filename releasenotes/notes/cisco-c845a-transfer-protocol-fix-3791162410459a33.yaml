@@ -1,0 +1,9 @@
+---
+fixes:
+  - |
+    Fixes virtual media insertion on BMCs (such as Cisco C845A M8 with
+    Redfish Base.1.18.1) that return ``ActionParameterMissing`` for the
+    missing ``TransferProtocolType`` parameter without including a
+    ``RelatedProperties`` field in the error response. The
+    ``is_transfer_protocol_required`` method now also checks for the
+    parameter name in ``MessageArgs`` as a fallback.

@@ -14,7 +14,6 @@
 
 import json
 import logging
-import subprocess
 import time
 from urllib.parse import urlparse
 
@@ -126,6 +125,10 @@ VFDD\
 
     _IDRAC_IS_READY_RETRIES = 96
     _IDRAC_IS_READY_RETRY_DELAY_SEC = 10
+
+    # Short per-probe HTTP timeout so reachability checks fail fast during the
+    # iDRAC reboot window instead of blocking on the default request timeout.
+    _IDRAC_REACHABLE_PROBE_TIMEOUT_SEC = 10
 
     @property
     def import_system_configuration_uri(self):
@@ -567,76 +570,80 @@ VFDD\
                                             self.redfish_version,
                                             self.registries)
 
-    def _wait_for_idrac_state(self, host, alive=True, ping_count=3,
+    def _wait_for_idrac_state(self, host, alive=True, required_count=3,
                               retries=24):
-        """Wait for iDRAC to become pingable or not pingable.
+        """Wait for iDRAC to become reachable or not reachable.
 
-        :param host: Hostname or IP of the iDRAC interface.
-        :param alive: True for pingable state and False for not pingable
-            state.
-        :param ping_count: Number of consecutive ping results, per
+        Reachability is determined over HTTP(S) via the existing Redfish
+        connection, not ICMP -- no external ``ping`` binary is required.
+
+        :param host: Hostname or IP of the iDRAC interface, for logging.
+        :param alive: True for the reachable state and False for the not
+            reachable state.
+        :param required_count: Number of consecutive matching results, per
             'alive', for success.
-        :param retries: Number of ping retries.
-        :returns: True on reaching specified host ping state; otherwise,
-            False.
+        :param retries: Number of retries.
+        :returns: True on reaching specified host reachability state;
+            otherwise, False.
         """
         if alive:
-            ping_type = "pingable"
+            state = "reachable"
         else:
-            ping_type = "not pingable"
-        LOG.debug("Waiting for iDRAC %(host)s to become %(ping_type)s",
-                  {'host': host, 'ping_type': ping_type})
+            state = "not reachable"
+        LOG.debug("Waiting for iDRAC %(host)s to become %(state)s",
+                  {'host': host, 'state': state})
         response_count = 0
         while retries > 0:
-            response = self._ping_host(host)
+            response = self._is_reachable()
             retries -= 1
             if response == alive:
                 response_count += 1
-                LOG.debug("iDRAC %(host)s is %(ping_type)s, "
+                LOG.debug("iDRAC %(host)s is %(state)s, "
                           "count=%(response_count)s",
-                          {'host': host, 'ping_type': ping_type,
+                          {'host': host, 'state': state,
                            'response_count': response_count})
-                if response_count == ping_count:
+                if response_count == required_count:
                     LOG.debug("Reached specified %(alive)s count for iDRAC "
                               "%(host)s", {'alive': alive, 'host': host})
                     return True
             else:
                 response_count = 0
                 if alive:
-                    LOG.debug("iDRAC %(host)s is still not pingable",
+                    LOG.debug("iDRAC %(host)s is still not reachable",
                               {'host': host})
                 else:
-                    LOG.debug("iDRAC %(host)s is still pingable",
+                    LOG.debug("iDRAC %(host)s is still reachable",
                               {'host': host})
             time.sleep(10)
         return False
 
-    def _wait_for_idrac(self, host, post_pingable_wait_time):
-        """Wait for iDRAC to transition from unpingable to pingable.
+    def _wait_for_idrac(self, host, post_reachable_wait_time):
+        """Wait for iDRAC to transition from not reachable to reachable.
 
         :param host: Hostname or IP of the iDRAC interface.
-        :param post_pingable_wait_time: Amount of time in seconds to
-            wait after the host becomes pingable.
+        :param post_reachable_wait_time: Amount of time in seconds to
+            wait after the host becomes reachable.
         :raises: ExtensionError on failure to perform requested
             operation.
         """
         state_reached = self._wait_for_idrac_state(
-            host, alive=False, ping_count=2, retries=24)
+            host, alive=False, required_count=2, retries=24)
         if not state_reached:
             error_msg = ("Timed out waiting iDRAC %(host)s to become not "
-                         "pingable", {'host': host})
+                         "reachable", {'host': host})
             LOG.error(error_msg)
             raise sushy.exceptions.ExtensionError(error=error_msg)
-        LOG.debug("iDRAC %(host)s has become not pingable", {'host': host})
+        LOG.debug("iDRAC %(host)s has become not reachable", {'host': host})
         state_reached = self._wait_for_idrac_state(host, alive=True,
-                                                   ping_count=3, retries=24)
+                                                   required_count=3,
+                                                   retries=24)
         if not state_reached:
-            error_msg = ("Timed out waiting iDRAC %(host)s to become pingable",
-                         {'host': host})
+            error_msg = ("Timed out waiting iDRAC %(host)s to become "
+                         "reachable", {'host': host})
             LOG.error(error_msg)
             raise sushy.exceptions.ExtensionError(error=error_msg)
-        LOG.debug("iDRAC %(host)s has become pingable", {'host': host})
-        time.sleep(post_pingable_wait_time)
+        LOG.debug("iDRAC %(host)s has become reachable", {'host': host})
+        time.sleep(post_reachable_wait_time)
 
     def _wait_until_idrac_is_ready(self, host, retries, retry_delay):
         """Wait until the iDRAC is in a ready state.
@@ -666,14 +673,28 @@ VFDD\
             LOG.error(error_msg)
             raise sushy.exceptions.ExtensionError(error=error_msg)
 
-    def _ping_host(self, host):
-        """Ping the hostname or IP of a host.
+    def _is_reachable(self):
+        """Check whether the iDRAC HTTP(S) endpoint is reachable.
 
-        :param host: Hostname or IP.
-        :returns: True if host is alive; otherwise, False.
+        Probes the Redfish service root over the existing connection. Any HTTP
+        response (even an error status) means the iDRAC is up; a connection
+        failure (refused/reset/timeout/SSL, as during a reboot) means it is
+        not yet reachable.
+
+        :returns: True if the iDRAC answered, otherwise False.
         """
-        response = subprocess.call(["ping", "-c", "1", host])  # noqa:S603,S607
-        return response == 0
+        try:
+            self._conn.get(
+                path='/redfish/v1/',
+                timeout=self._IDRAC_REACHABLE_PROBE_TIMEOUT_SEC)
+        except sushy.exceptions.ConnectionError as exc:
+            LOG.debug("iDRAC is not reachable over HTTP: %(err)s",
+                      {'err': exc})
+            return False
+        except sushy.exceptions.HTTPError:
+            # An error status still proves the iDRAC is up and serving.
+            return True
+        return True
 
 
 def get_extension(*args, **kwargs):

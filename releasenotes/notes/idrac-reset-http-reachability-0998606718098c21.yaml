@@ -1,0 +1,11 @@
+---
+fixes:
+  - |
+    The Dell OEM manager extension no longer shells out to the external
+    ``ping`` binary when waiting for the iDRAC to reboot during
+    ``reset_idrac``. Reachability is now determined over HTTP(S) using the
+    existing Redfish connection. This removes the dependency on a ``ping``
+    executable being present (e.g. in container images) and on ICMP traffic
+    being permitted, and avoids an uncaught ``FileNotFoundError`` when the
+    binary is missing. See `bug 2151783
+    <https://bugs.launchpad.net/sushy/+bug/2151783>`__ for details.

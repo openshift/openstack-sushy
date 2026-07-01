@@ -606,9 +606,9 @@ class ManagerTestCase(BaseTestCase):
         oem_manager._wait_for_idrac_state.return_value = True
         oem_manager._wait_for_idrac('1.2.3.4', 30)
         oem_manager._wait_for_idrac_state.assert_called_with(
-            '1.2.3.4', alive=True, ping_count=3, retries=24)
+            '1.2.3.4', alive=True, required_count=3, retries=24)
         oem_manager._wait_for_idrac_state.assert_any_call(
-            '1.2.3.4', alive=False, ping_count=2, retries=24)
+            '1.2.3.4', alive=False, required_count=2, retries=24)
         self.assertEqual(2, oem_manager._wait_for_idrac_state.call_count)
 
     @mock.patch('time.sleep', autospec=True)
@@ -630,39 +630,52 @@ class ManagerTestCase(BaseTestCase):
                           oem_manager._wait_for_idrac, '1.2.3.4', 30)
 
     @mock.patch('time.sleep', autospec=True)
-    def test__wait_for_idrac_state_with_pingable(self, mock_time_sleep):
+    def test__wait_for_idrac_state_with_reachable(self, mock_time_sleep):
         oem_manager = self.manager.get_oem_extension('Dell')
-        oem_manager._ping_host = mock.Mock()
-        oem_manager._ping_host.return_value = True
+        oem_manager._is_reachable = mock.Mock()
+        oem_manager._is_reachable.return_value = True
         response = oem_manager._wait_for_idrac_state('1.2.3.4')
         self.assertEqual(True, response)
-        self.assertEqual(3, oem_manager._ping_host.call_count)
+        self.assertEqual(3, oem_manager._is_reachable.call_count)
 
     @mock.patch('time.sleep', autospec=True)
-    def test__wait_for_idrac_state_without_pingable(self, mock_time_sleep):
+    def test__wait_for_idrac_state_without_reachable(self, mock_time_sleep):
         oem_manager = self.manager.get_oem_extension('Dell')
-        oem_manager._ping_host = mock.Mock()
-        oem_manager._ping_host.return_value = False
+        oem_manager._is_reachable = mock.Mock()
+        oem_manager._is_reachable.return_value = False
         response = oem_manager._wait_for_idrac_state('1.2.3.4')
         self.assertEqual(False, response)
-        self.assertEqual(24, oem_manager._ping_host.call_count)
+        self.assertEqual(24, oem_manager._is_reachable.call_count)
 
-    @mock.patch('subprocess.call', autospec=True)
-    def test__ping_host_alive(self, mock_call):
+    def test__is_reachable_when_idrac_responds(self):
         oem_manager = self.manager.get_oem_extension('Dell')
-        mock_call.return_value = 0
+        oem_manager._conn.get = mock.Mock()
 
-        result = oem_manager._ping_host('1.2.3.4')
+        result = oem_manager._is_reachable()
 
         self.assertTrue(result)
-        mock_call.assert_called_with(["ping", "-c", "1", '1.2.3.4'])
+        oem_manager._conn.get.assert_called_once_with(
+            path='/redfish/v1/', timeout=mock.ANY)
 
-    @mock.patch('subprocess.call', autospec=True)
-    def test__ping_host_not_alive(self, mock_call):
+    def test__is_reachable_on_http_error(self):
         oem_manager = self.manager.get_oem_extension('Dell')
-        mock_call.return_value = 1
+        response = mock.Mock()
+        response.status_code = 500
+        response.json.return_value = {}
+        oem_manager._conn.get = mock.Mock(
+            side_effect=sushy.exceptions.ServerSideError(
+                'GET', '/redfish/v1/', response))
 
-        result = oem_manager._ping_host('1.2.3.4')
+        result = oem_manager._is_reachable()
+
+        self.assertTrue(result)
+
+    def test__is_reachable_on_connection_error(self):
+        oem_manager = self.manager.get_oem_extension('Dell')
+        oem_manager._conn.get = mock.Mock(
+            side_effect=sushy.exceptions.ConnectionError(
+                url='/redfish/v1/', error='boom'))
+
+        result = oem_manager._is_reachable()
 
         self.assertFalse(result)
-        mock_call.assert_called_with(["ping", "-c", "1", '1.2.3.4'])

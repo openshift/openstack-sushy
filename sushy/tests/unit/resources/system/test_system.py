@@ -362,6 +362,46 @@ class SystemTestCase(base.TestCase):
                            'BootSourceOverrideTarget': 'Cd'}},
             etag='81802dbf61beb0bd')
 
+    def test_set_system_boot_options_quanta_egn77c_usb_boot(self):
+        # Usb is already among the sample's allowable values.
+        self.sys_inst.manufacturer = "Quanta Cloud Technology Inc."
+        self.sys_inst.model = "QuantaEdge EGN77C-2U"
+        self.sys_inst.set_system_boot_options(
+            target=sushy.BootSource.CD,
+            enabled=sushy.BootSourceOverrideEnabled.ONCE)
+
+        self.sys_inst._conn.patch.assert_called_once_with(
+            '/redfish/v1/Systems/437XR1138R2',
+            data={'Boot': {'BootSourceOverrideEnabled': 'Once',
+                           'BootSourceOverrideTarget': 'Usb'}},
+            etag='81802dbf61beb0bd')
+
+    def test_set_system_boot_options_no_quirk_keeps_target(self):
+        # Advertise both substitution targets, so an over-broad match in the
+        # quirk table shows up here instead of being masked by the
+        # allowable-values guard. QuantaGrid shares a manufacturer with the
+        # quirked EGN77C-2U and must not be rewritten.
+        (self.json_doc["Boot"]
+         ["BootSourceOverrideTarget@Redfish.AllowableValues"]).append("UsbCd")
+        self.sys_inst._parse_attributes(self.json_doc)
+
+        for manufacturer, model in [
+                ('Dell Inc.', 'PowerEdge R640'),
+                ('Quanta Cloud Technology Inc.', 'QuantaGrid S74G-2U')]:
+            with self.subTest(manufacturer=manufacturer):
+                self.sys_inst._conn.patch.reset_mock()
+                self.sys_inst.manufacturer = manufacturer
+                self.sys_inst.model = model
+                self.sys_inst.set_system_boot_options(
+                    target=sushy.BootSource.CD,
+                    enabled=sushy.BootSourceOverrideEnabled.ONCE)
+
+                self.sys_inst._conn.patch.assert_called_once_with(
+                    '/redfish/v1/Systems/437XR1138R2',
+                    data={'Boot': {'BootSourceOverrideEnabled': 'Once',
+                                   'BootSourceOverrideTarget': 'Cd'}},
+                    etag='81802dbf61beb0bd')
+
     def test_set_system_boot_options_settings_resource_nokia(self):
         with open('sushy/tests/unit/json_samples/settings-nokia.json') as f:
             settings_obj = json.load(f)

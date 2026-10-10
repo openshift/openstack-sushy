@@ -44,6 +44,33 @@ LOG = logging.getLogger(__name__)
 
 EXPAND_QUERY = '?$expand=.($levels=1)'
 
+# Some BMCs present virtual media to the host as a device class that does not
+# match the media type advertised by the VirtualMedia resource. Redfish offers
+# no way to discover this: MediaTypes describes the BMC-side emulated device,
+# BootSourceOverrideTarget describes the host-side enumeration, and nothing in
+# the data model links the two.
+#
+# Entries are (manufacturer, model, from_target, to_target). Manufacturer and
+# model are matched as case-insensitive substrings; a model of None matches any
+# model. A substitution is applied only when the replacement target is
+# advertised in BootSourceOverrideTarget@Redfish.AllowableValues, so an
+# over-broad match cannot produce a request the BMC would reject.
+BOOT_SOURCE_TARGET_QUIRKS = [
+    # SuperMicro presents virtual media as a USB CD drive. Both Cd and UsbCd
+    # are offered, but only UsbCd boots; selecting Cd fails even with media
+    # inserted. First reported on X11/X12, since observed on ARS-111GL-NHR
+    # (ARMv9), so this is not tied to a board generation.
+    ('supermicro', None,
+     sys_cons.BootSource.CD, sys_cons.BootSource.USB_CD),
+    # Quanta QuantaEdge EGN77C-2U (OpenBMC) presents virtual media as a USB
+    # removable device: the slots are named USB1/USB2 and report
+    # "Virtual Removable Media". UsbCd is not offered and Usb is the only
+    # working target. Other QuantaGrid models expose a plain optical CD1 slot
+    # and must not be rewritten, hence the model match.
+    ('quanta', 'egn77c',
+     sys_cons.BootSource.CD, sys_cons.BootSource.USB),
+]
+
 
 class ActionsField(base.CompositeField):
     reset = common.ResetActionField('#ComputerSystem.Reset')
@@ -334,6 +361,37 @@ class System(base.ResourceBase):
         return {v for v in sys_cons.BootSource
                 if v.value in self.boot.allowed_values}
 
+    def _apply_boot_source_target_quirks(self, target):
+        """Apply vendor quirks to a requested boot source target.
+
+        Some BMCs require a boot source target that does not correspond to the
+        media type of the device the image was inserted into. See
+        :data:`BOOT_SOURCE_TARGET_QUIRKS` for the rationale.
+
+        :param target: the requested :py:class:`sushy.BootSource` value.
+        :returns: the target to actually send to the BMC, which is ``target``
+            itself when no quirk applies.
+        """
+        manufacturer = (self.manufacturer or '').lower()
+        model = (self.model or '').lower()
+        allowed = (self.boot.allowed_values or []) if self.boot else []
+
+        for quirk_manuf, quirk_model, from_target, to_target in (
+                BOOT_SOURCE_TARGET_QUIRKS):
+            if (quirk_manuf in manufacturer
+                    and (quirk_model is None or quirk_model in model)
+                    and target == from_target
+                    and to_target.value in allowed):
+                LOG.info('Applying boot source target quirk for %(manuf)s '
+                         '%(model)s: overriding requested target %(from)s '
+                         'with %(to)s for System %(identity)s.',
+                         {'manuf': self.manufacturer, 'model': self.model,
+                          'from': from_target.value, 'to': to_target.value,
+                          'identity': self.identity})
+                return to_target
+
+        return target
+
     def set_system_boot_options(self, target=None, enabled=None, mode=None,
                                 http_boot_uri=None):
         """Set boot source and/or boot frequency and/or boot mode.
@@ -377,23 +435,7 @@ class System(base.ResourceBase):
                     valid_values=valid_targets)
 
             target = sys_cons.BootSource(target)
-            # NOTE(janders) on SuperMicro X11 and X12 machines, virtual media
-            # is presented as an "USB CD" drive as opposed to a CD drive. Both
-            # are present in the list of boot devices, however only selecting
-            # UsbCd as the boot source results in a successful boot from
-            # vMedia. If "CD" is selected, boot fails even if vMedia is
-            # inserted. This code detects a case where a SuperMicro machine is
-            # about to attempt boot from CD and overrides the boot device to
-            # UsbCd instead which makes boot from vMedia work as expected.
-            if (self.manufacturer and self.manufacturer.lower() == 'supermicro'
-                    and target == sys_cons.BootSource.CD
-                    and self.boot
-                    and sys_cons.BootSource.USB_CD.value
-                    in self.boot.allowed_values):
-                LOG.debug('Boot from vMedia was requested on a SuperMicro'
-                          'machine. Overriding boot device from %s to %s.',
-                          target, sys_cons.BootSource.USB_CD)
-                target = sys_cons.BootSource.USB_CD
+            target = self._apply_boot_source_target_quirks(target)
             if (settings_resp and "BootSourceOverrideTarget" in
                     settings_boot_section):
                 settings_data['Boot']['BootSourceOverrideTarget'] = \

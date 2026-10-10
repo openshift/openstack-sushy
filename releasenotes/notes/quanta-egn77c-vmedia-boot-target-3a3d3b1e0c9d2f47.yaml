@@ -1,0 +1,19 @@
+---
+fixes:
+  - |
+    Fixes booting from virtual media on Quanta QuantaEdge EGN77C-2U machines.
+    These BMCs present virtual media to the host as a USB removable device,
+    and the host fails to boot when ``Cd`` is requested as the boot source
+    override target even though the media is correctly inserted. ``Usb`` is
+    now sent instead on these machines. Other Quanta models, which expose a
+    conventional virtual optical device, are unaffected.
+upgrade:
+  - |
+    The SuperMicro ``Cd`` to ``UsbCd`` boot source override substitution and
+    the new Quanta ``Cd`` to ``Usb`` substitution are now driven by the
+    ``sushy.resources.system.system.BOOT_SOURCE_TARGET_QUIRKS`` table. The
+    SuperMicro manufacturer check has been relaxed from an exact match to a
+    case-insensitive substring match; substitutions continue to be applied
+    only when the replacement target is advertised by the BMC in
+    ``BootSourceOverrideTarget@Redfish.AllowableValues``. Substitutions are
+    now logged at ``INFO`` rather than ``DEBUG``.
